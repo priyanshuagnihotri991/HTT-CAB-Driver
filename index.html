@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HTT CAB Driver</title>
+
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;
+ background:#07152e;
+ color:white;
+ font-family:Arial,sans-serif
+}
+header{
+ background:#101f3c;
+ padding:20px;
+ border-bottom:2px solid #d8b65e
+}
+h1{color:#d8b65e;margin:0}
+h2{color:#e8c875}
+main{max-width:650px;margin:auto;padding:15px}
+.panel{
+ background:#14294a;
+ border:1px solid #344b70;
+ border-radius:14px;
+ padding:18px;
+ margin:15px 0
+}
+input{
+ width:100%;
+ padding:14px;
+ margin:8px 0;
+ border-radius:8px;
+ border:1px solid #667b9c;
+ background:#fff;
+ color:#111;
+ font-size:16px
+}
+button{
+ padding:13px 18px;
+ border:0;
+ border-radius:8px;
+ background:#d8b65e;
+ color:#101827;
+ font-weight:bold;
+ margin:6px 3px;
+ font-size:15px
+}
+button:disabled{opacity:.5}
+.hidden{display:none}
+.muted{color:#bdc9dc}
+.trip{
+ border-bottom:1px solid #405577;
+ padding:14px 0
+}
+.status{color:#e8c875;font-weight:bold}
+</style>
+</head>
+
+<body>
+
+<header>
+ <h1>HTT CAB</h1>
+ <p>Your Journey, Our Responsibility.</p>
+ <p>Driver Partner App</p>
+</header>
+
+<main>
+
+<section id="loginPanel" class="panel">
+ <h2>Driver Login</h2>
+ <p class="muted">Sign in with your authorized driver account.</p>
+
+ <input id="email" type="email" placeholder="Email Address">
+ <input id="password" type="password" placeholder="Password">
+
+ <button id="loginBtn">Login</button>
+ <p id="message" class="muted"></p>
+</section>
+
+<section id="dashboard" class="hidden">
+
+ <div class="panel">
+  <h2>Welcome, Driver</h2>
+  <p id="driverName">Loading profile...</p>
+  <p id="driverPhone" class="muted"></p>
+  <button id="logoutBtn">Logout</button>
+ </div>
+
+ <div class="panel">
+  <h2>Duty Status</h2>
+  <p>Current Status: <span id="dutyStatus" class="status">Offline</span></p>
+  <button id="onlineBtn">Go Online</button>
+  <button id="offlineBtn">Go Offline</button>
+  <p class="muted">Go online when you are ready to receive trips.</p>
+ </div>
+
+ <div class="panel">
+  <h2>New Booking Requests</h2>
+  <button id="refreshBookingsBtn">Refresh Bookings</button>
+  <div id="newBookings" class="muted">No new bookings loaded.</div>
+ </div>
+
+ <div class="panel">
+  <h2>My Trips</h2>
+  <button id="refreshTripsBtn">Refresh Trips</button>
+  <div id="myTrips" class="muted">No trips loaded.</div>
+ </div>
+
+ <div class="panel">
+  <h2>My Earnings</h2>
+  <p>Total Completed Trips: <strong id="completedCount">0</strong></p>
+  <p>Total Earnings: <strong id="totalEarnings">₹0</strong></p>
+  <p class="muted">Earnings will appear when trip fare records are connected.</p>
+ </div>
+
+</section>
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore-compat.js"></script>
+
+<script>
+const firebaseConfig = {
+ apiKey: "AIzaSyAD3dsycJ7PzTkzC26T6A8dgNN0hZKw-Yc",
+ authDomain: "htt-cab.firebaseapp.com",
+ projectId: "htt-cab",
+ storageBucket: "htt-cab.firebasestorage.app",
+ messagingSenderId: "752311448265",
+ appId: "1:752311448265:web:33738207544f66846e5318"
+};
+
+firebase.initializeApp(firebaseConfig);
+
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+const loginPanel = document.getElementById("loginPanel");
+const dashboard = document.getElementById("dashboard");
+const message = document.getElementById("message");
+
+let currentDriver = null;
+
+document.getElementById("loginBtn").onclick = async () => {
+ message.textContent = "Signing in...";
+
+ try {
+  await auth.signInWithEmailAndPassword(
+   document.getElementById("email").value.trim(),
+   document.getElementById("password").value
+  );
+ } catch(error) {
+  message.textContent = error.message;
+ }
+};
+
+auth.onAuthStateChanged(async user => {
+ if(!user) {
+  currentDriver = null;
+  loginPanel.classList.remove("hidden");
+  dashboard.classList.add("hidden");
+  return;
+ }
+
+ currentDriver = user;
+ loginPanel.classList.add("hidden");
+ dashboard.classList.remove("hidden");
+
+ await loadDriverProfile();
+ await loadMyTrips();
+});
+
+async function loadDriverProfile(){
+ try {
+  const doc = await db.collection("drivers").doc(currentDriver.uid).get();
+
+  if(doc.exists){
+   const data = doc.data();
+   document.getElementById("driverName").textContent =
+    data.fullName || data.name || "Driver Partner";
+
+   document.getElementById("driverPhone").textContent =
+    "Phone: " + (data.phone || data.mobile || "-");
+
+   document.getElementById("dutyStatus").textContent =
+    data.status || "Offline";
+  } else {
+   document.getElementById("driverName").textContent =
+    "Driver profile not found. Contact HTT Admin.";
+  }
+ } catch(error) {
+  document.getElementById("driverName").textContent =
+   "Profile error: " + error.message;
+ }
+}
+
+async function updateDuty(status){
+ if(!currentDriver) return;
+
+ try {
+  await db.collection("drivers").doc(currentDriver.uid).update({
+   status: status
+  });
+
+  document.getElementById("dutyStatus").textContent = status;
+  alert("Duty status updated.");
+ } catch(error) {
+  alert("Status update failed: " + error.message);
+ }
+}
+
+document.getElementById("onlineBtn").onclick =
+ () => updateDuty("Online");
+
+document.getElementById("offlineBtn").onclick =
+ () => updateDuty("Offline");
+
+async function loadMyTrips(){
+ const box = document.getElementById("myTrips");
+ box.textContent = "Loading trips...";
+
+ try {
+  const result = await db.collection("bookings")
+   .where("driverId","==",currentDriver.uid)
+   .limit(50).get();
+
+  box.replaceChildren();
+
+  if(result.empty){
+   box.textContent = "No trips assigned yet.";
+   return;
+  }
+
+  result.forEach(item => {
+   const data = item.data();
+   const card = document.createElement("div");
+   card.className = "trip";
+
+   const title = document.createElement("h3");
+   title.textContent = "Booking ID: " + item.id;
+   card.appendChild(title);
+
+   const details = document.createElement("p");
+   details.textContent =
+    "Pickup: " + (data.pickup || "-") +
+    " | Drop: " + (data.drop || "-") +
+    " | Status: " + (data.status || "-");
+
+   card.appendChild(details);
+   box.appendChild(card);
+  });
+
+ } catch(error) {
+  box.textContent = "Trip error: " + error.message;
+ }
+}
+
+async function loadNewBookings(){
+ const box = document.getElementById("newBookings");
+ box.textContent = "Loading requests...";
+
+ try {
+  const result = await db.collection("bookings")
+   .where("status","==","Pending")
+   .limit(30).get();
+
+  box.replaceChildren();
+
+  if(result.empty){
+   box.textContent = "No new booking requests.";
+   return;
+  }
+
+  result.forEach(item => {
+   const data = item.data();
+   const card = document.createElement("div");
+   card.className = "trip";
+
+   const title = document.createElement("h3");
+   title.textContent = "New Booking: " + item.id;
+   card.appendChild(title);
+
+   const details = document.createElement("p");
+   details.textContent =
+    "Pickup: " + (data.pickup || "-") +
+    " | Drop: " + (data.drop || "-") +
+    " | Vehicle: " + (data.vehicleType || "-");
+
+   card.appendChild(details);
+   box.appendChild(card);
+  });
+
+ } catch(error) {
+  box.textContent = "Booking error: " + error.message;
+ }
+}
+
+document.getElementById("refreshTripsBtn").onclick = loadMyTrips;
+document.getElementById("refreshBookingsBtn").onclick = loadNewBookings;
+
+document.getElementById("logoutBtn").onclick = () => auth.signOut();
+</script>
+
+</body>
+</html>
